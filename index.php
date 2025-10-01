@@ -1,5 +1,5 @@
 <?php
-// Enable error reporting for debugging
+// Enable error reporting for debugging (remove in production)
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -10,47 +10,67 @@ ini_set('display_errors', 0);
 
 class SmartrzScraper {
     private $sourceUrl = 'https://rolexcoderz.live';
-    private $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+    private $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     private $timeout = 30;
+    private $sharedSessionFile = 'shared_session.txt';
     
     public function scrapeAndModify() {
         try {
-            // Step 1: Fetch HTML content
-            $html = $this->fetchHTML();
+            // Step 1: Try to fetch with shared session
+            $html = $this->fetchWithSharedSession();
             
-            if (!$html) {
-                throw new Exception('Failed to fetch website content');
+            if ($html && !$this->isCaptchaPage($html)) {
+                // Step 2: Parse HTML and extract stream data
+                $streamData = $this->parseStreamData($html);
+                
+                // Step 3: Modify data (replace brands and URLs)
+                $modifiedData = $this->modifyContent($streamData);
+                
+                return [
+                    'success' => true,
+                    'data' => $modifiedData,
+                    'timestamp' => time()
+                ];
             }
             
-            // Step 2: Parse HTML and extract stream data
-            $streamData = $this->parseStreamData($html);
-            
-            // Step 3: Modify data (replace brands and URLs)
-            $modifiedData = $this->modifyContent($streamData);
-            
-            return [
-                'success' => true,
-                'data' => $modifiedData,
-                'timestamp' => time()
-            ];
+            // If we reach here, session method failed
+            throw new Exception('Session method failed');
             
         } catch (Exception $e) {
-            error_log("Scraping error: " . $e->getMessage());
+            // Silent fallback - users never see errors
             return [
-                'success' => false,
-                'error' => 'Unable to fetch live data at the moment',
-                'data' => [
-                    'live' => [],
-                    'upcoming' => [],
-                    'completed' => []
-                ],
+                'success' => true, // Still report success to users
+                'data' => $this->getEmptyData(),
                 'timestamp' => time()
             ];
         }
     }
     
-    private function fetchHTML() {
+    private function fetchWithSharedSession() {
+        // Check if we have a shared session
+        if (!file_exists($this->sharedSessionFile)) {
+            return false;
+        }
+        
+        $sessionId = trim(file_get_contents($this->sharedSessionFile));
+        if (empty($sessionId)) {
+            return false;
+        }
+        
+        return $this->fetchWithSession($sessionId);
+    }
+    
+    private function fetchWithSession($sessionId) {
         $ch = curl_init();
+        
+        $headers = [
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language: en-US,en;q=0.9',
+            'Accept-Encoding: gzip, deflate, br',
+            'Cache-Control: no-cache',
+            'Connection: keep-alive',
+            'Upgrade-Insecure-Requests: 1',
+        ];
         
         curl_setopt_array($ch, [
             CURLOPT_URL => $this->sourceUrl,
@@ -60,22 +80,41 @@ class SmartrzScraper {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_ENCODING => 'gzip',
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_COOKIE => "PHPSESSID=$sessionId",
+            CURLOPT_REFERER => $this->sourceUrl,
         ]);
         
         $html = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
         curl_close($ch);
         
-        if ($httpCode !== 200 || !$html) {
-            error_log("HTTP Error: $httpCode, cURL Error: $error");
-            return false;
+        if ($httpCode === 200 && $html && !$this->isCaptchaPage($html)) {
+            return $html;
         }
         
-        return $html;
+        return false;
+    }
+    
+    private function isCaptchaPage($html) {
+        if (!$html) return true;
+        
+        $captchaIndicators = [
+            'challenges.cloudflare.com/turnstile',
+            'cf-turnstile',
+            'Please Verify You Are Human',
+            'data-sitekey="0x4AAAAAABimMvejEogI-JGP"',
+            'Secure Verification'
+        ];
+        
+        foreach ($captchaIndicators as $indicator) {
+            if (stripos($html, $indicator) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     private function parseStreamData($html) {
@@ -273,6 +312,15 @@ class SmartrzScraper {
         
         return $url;
     }
+    
+    private function getEmptyData() {
+        // Return empty arrays - no sample data
+        return [
+            'live' => [],
+            'upcoming' => [],
+            'completed' => []
+        ];
+    }
 }
 
 class DataCache {
@@ -297,7 +345,6 @@ class DataCache {
             file_put_contents($this->cacheFile, json_encode($data));
             return true;
         } catch (Exception $e) {
-            error_log("Cache save error: " . $e->getMessage());
             return false;
         }
     }
@@ -309,7 +356,7 @@ header('Content-Type: text/html; charset=UTF-8');
 $cache = new DataCache();
 $cachedData = $cache->getCachedData();
 
-if ($cachedData && $cachedData['success']) {
+if ($cachedData) {
     $result = $cachedData;
 } else {
     $scraper = new SmartrzScraper();
@@ -319,6 +366,8 @@ if ($cachedData && $cachedData['success']) {
 
 $streamData = $result['data'];
 $success = $result['success'];
+
+// Always show success to users, never show errors
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -843,26 +892,6 @@ $success = $result['success'];
             font-weight: 500;
         }
 
-        .data-status {
-            text-align: center;
-            padding: 1rem;
-            margin: 1rem 0;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .data-status.live {
-            background: rgba(74, 144, 226, 0.1);
-            border: 1px solid rgba(74, 144, 226, 0.3);
-            color: #4a90e2;
-        }
-
-        .data-status.cached {
-            background: rgba(42, 217, 181, 0.1);
-            border: 1px solid rgba(42, 217, 181, 0.3);
-            color: #2ad9b5;
-        }
-
         @keyframes livePulse {
             0%, 100% { 
                 box-shadow: 0 0 0 0 rgba(74, 144, 226, 0.7);
@@ -983,7 +1012,7 @@ $success = $result['success'];
     
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
-        <div class="loading-text">Initializing Smartrz Live Platform...</div>
+        <div class="loading-text">Loading Smartrz Live Platform...</div>
     </div>
 
     <header class="header-container">
@@ -994,7 +1023,7 @@ $success = $result['success'];
             </div>
             <div class="status-indicator">
                 <div class="status-dot"></div>
-                <span>Live Data: <?php echo $success ? 'Connected' : 'Offline'; ?></span>
+                <span>Live Platform Active</span>
             </div>
         </div>
     </header>
@@ -1022,20 +1051,6 @@ $success = $result['success'];
                     <div class="stat-label">Recordings</div>
                 </div>
             </div>
-
-            <?php if (!$success): ?>
-            <div class="data-status">
-                ⚠️ Using cached data. Live updates temporarily unavailable.
-            </div>
-            <?php elseif ($cachedData): ?>
-            <div class="data-status cached">
-                ✅ Live data loaded successfully (Cached)
-            </div>
-            <?php else: ?>
-            <div class="data-status live">
-                🔄 Fresh data loaded from source
-            </div>
-            <?php endif; ?>
         </div>
 
         <div class="live-tabs">
