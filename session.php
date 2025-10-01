@@ -5,38 +5,47 @@ header('Content-Type: text/html; charset=UTF-8');
 $sessionFile = 'shared_session.txt';
 $password = 'admin123'; // Change this to your preferred password
 
-// Handle form submission
-if ($_POST['action'] === 'save_session') {
+$showForm = false;
+$error = '';
+$success = '';
+
+// Handle password verification
+if ($_POST['action'] === 'verify_password') {
     if ($_POST['password'] !== $password) {
         $error = "❌ Invalid password!";
     } else {
-        $sessionId = trim($_POST['session_id']);
-        if (empty($sessionId)) {
-            $error = "❌ Session ID cannot be empty!";
-        } else {
-            file_put_contents($sessionFile, $sessionId);
-            $success = "✅ Session saved successfully!";
-            
-            // Test the session immediately
-            header("Location: /?test_session=1&session_id=" . urlencode($sessionId));
-            exit;
-        }
+        $showForm = true;
+        $_SESSION['verified'] = true;
+    }
+}
+
+// Handle form submission
+if ($_POST['action'] === 'save_session' && $_SESSION['verified']) {
+    $sessionId = trim($_POST['session_id']);
+    if (empty($sessionId)) {
+        $error = "❌ Session ID cannot be empty!";
+    } else {
+        file_put_contents($sessionFile, $sessionId);
+        $success = "✅ Session saved successfully!";
+        $showForm = true;
     }
 }
 
 // Handle session clearing
-if ($_POST['action'] === 'clear_session') {
-    if ($_POST['password'] !== $password) {
-        $error = "❌ Invalid password!";
-    } else {
-        if (file_exists($sessionFile)) {
-            unlink($sessionFile);
-        }
-        $success = "✅ Session cleared!";
+if ($_POST['action'] === 'clear_session' && $_SESSION['verified']) {
+    if (file_exists($sessionFile)) {
+        unlink($sessionFile);
     }
+    $success = "✅ Session cleared!";
+    $showForm = true;
 }
 
 $currentSession = file_exists($sessionFile) ? file_get_contents($sessionFile) : '';
+
+// If already verified in this session, show form
+if (isset($_SESSION['verified']) && $_SESSION['verified']) {
+    $showForm = true;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -52,10 +61,13 @@ $currentSession = file_exists($sessionFile) ? file_get_contents($sessionFile) : 
             color: #ffffff; 
             min-height: 100vh;
             padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .container { 
-            max-width: 600px; 
-            margin: 0 auto; 
+            max-width: 500px; 
+            width: 100%;
             background: rgba(255,255,255,0.05);
             padding: 30px; 
             border-radius: 15px;
@@ -69,6 +81,7 @@ $currentSession = file_exists($sessionFile) ? file_get_contents($sessionFile) : 
             text-align: center;
             margin-bottom: 30px;
             font-family: 'JetBrains Mono', monospace;
+            font-size: 1.8rem;
         }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; color: rgba(255,255,255,0.8); }
@@ -109,16 +122,8 @@ $currentSession = file_exists($sessionFile) ? file_get_contents($sessionFile) : 
             margin: 20px 0;
             word-break: break-all;
             border: 1px dashed rgba(255,255,255,0.2);
+            text-align: center;
         }
-        .instructions {
-            background: rgba(74, 144, 226, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 4px solid #4a90e2;
-        }
-        .instructions ol { padding-left: 20px; }
-        .instructions li { margin-bottom: 10px; }
         .status {
             padding: 15px;
             border-radius: 8px;
@@ -127,82 +132,80 @@ $currentSession = file_exists($sessionFile) ? file_get_contents($sessionFile) : 
         }
         .status.success { background: rgba(0, 204, 102, 0.2); border: 1px solid #00cc66; }
         .status.error { background: rgba(255, 107, 107, 0.2); border: 1px solid #ff6b6b; }
-        .status.info { background: rgba(74, 144, 226, 0.2); border: 1px solid #4a90e2; }
+        .hidden { display: none; }
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .back-link a {
+            color: #4a90e2;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔐 Smartrz Session Manager</h1>
+        <h1>🔐 Session Manager</h1>
         
-        <?php if (isset($success)): ?>
+        <?php if ($success): ?>
             <div class="status success"><?php echo $success; ?></div>
         <?php endif; ?>
         
-        <?php if (isset($error)): ?>
+        <?php if ($error): ?>
             <div class="status error"><?php echo $error; ?></div>
         <?php endif; ?>
 
-        <div class="session-display">
-            <strong>Current Shared Session:</strong><br>
+        <!-- Password Verification Form -->
+        <div id="passwordSection" class="<?php echo $showForm ? 'hidden' : ''; ?>">
+            <form method="POST">
+                <input type="hidden" name="action" value="verify_password">
+                
+                <div class="form-group">
+                    <label>Enter Admin Password:</label>
+                    <input type="password" name="password" required 
+                           placeholder="Enter password to continue...">
+                </div>
+                
+                <button type="submit">🔓 Access Session Manager</button>
+            </form>
+        </div>
+
+        <!-- Session Management Form -->
+        <div id="sessionSection" class="<?php echo !$showForm ? 'hidden' : ''; ?>">
             <?php if ($currentSession): ?>
-                <code style="color: #2ad9b5;"><?php echo htmlspecialchars($currentSession); ?></code>
-                <div style="margin-top: 10px;">
-                    <a href="/?test_session=1&session_id=<?php echo urlencode($currentSession); ?>" 
-                       target="_blank" style="color: #4a90e2; text-decoration: none;">
-                       🧪 Test This Session
-                    </a>
+                <div class="session-display">
+                    <strong>Current Session:</strong><br>
+                    <code style="color: #2ad9b5;"><?php echo htmlspecialchars($currentSession); ?></code>
                 </div>
             <?php else: ?>
-                <span style="color: #ff6b6b;">No session set</span>
+                <div class="session-display" style="color: #ff6b6b;">
+                    <strong>No session currently set</strong>
+                </div>
             <?php endif; ?>
-        </div>
 
-        <form method="POST">
-            <input type="hidden" name="action" value="save_session">
-            
-            <div class="form-group">
-                <label>🔑 Admin Password:</label>
-                <input type="password" name="password" required 
-                       placeholder="Enter admin password...">
+            <form method="POST">
+                <input type="hidden" name="action" value="save_session">
+                
+                <div class="form-group">
+                    <label>PHPSESSID:</label>
+                    <input type="text" name="session_id" required 
+                           placeholder="Paste PHPSESSID here..."
+                           value="<?php echo htmlspecialchars($currentSession); ?>">
+                </div>
+                
+                <button type="submit">💾 Save Session</button>
+            </form>
+
+            <?php if ($currentSession): ?>
+                <form method="POST">
+                    <input type="hidden" name="action" value="clear_session">
+                    <button type="submit" class="btn-clear">🗑️ Clear Session</button>
+                </form>
+            <?php endif; ?>
+
+            <div class="back-link">
+                <a href="/">← Back to Main Site</a>
             </div>
-            
-            <div class="form-group">
-                <label>🆔 PHPSESSID:</label>
-                <input type="text" name="session_id" required 
-                       placeholder="Paste PHPSESSID here..."
-                       value="<?php echo htmlspecialchars($currentSession); ?>">
-            </div>
-            
-            <button type="submit">💾 Save Shared Session</button>
-        </form>
-
-        <form method="POST">
-            <input type="hidden" name="action" value="clear_session">
-            <div class="form-group">
-                <label>🔑 Admin Password to Clear:</label>
-                <input type="password" name="password" required 
-                       placeholder="Enter admin password...">
-            </div>
-            <button type="submit" class="btn-clear">🗑️ Clear Session</button>
-        </form>
-
-        <div class="instructions">
-            <h3>📖 How to Get PHPSESSID:</h3>
-            <ol>
-                <li>Visit <code>rolexcoderz.live</code> in your browser</li>
-                <li>Complete the CAPTCHA verification</li>
-                <li>Press <kbd>F12</kbd> to open Developer Tools</li>
-                <li>Go to <strong>Application</strong> → <strong>Storage</strong> → <strong>Cookies</strong></li>
-                <li>Find <code>PHPSESSID</code> and copy its value</li>
-                <li>Paste it above and save (password: <code>admin123</code>)</li>
-            </ol>
-            <p><strong>💡 Tip:</strong> This session will be shared with all users of your Smartrz site!</p>
-        </div>
-
-        <div class="status info">
-            <strong>🔗 Quick Links:</strong><br>
-            <a href="/" style="color: #4a90e2;">🏠 Main Site</a> | 
-            <a href="/?test_all_sessions=1" style="color: #4a90e2;">🧪 Test All Features</a>
         </div>
     </div>
 </body>
