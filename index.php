@@ -1,5 +1,5 @@
 <?php
-// Enable error reporting for debugging (remove in production)
+// Enable error reporting for debugging
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -60,7 +60,7 @@ class SmartrzScraper {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_ENCODING => '', // Handle compression
+            CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
             CURLOPT_CONNECTTIMEOUT => 15,
         ]);
@@ -80,7 +80,7 @@ class SmartrzScraper {
     
     private function parseStreamData($html) {
         $dom = new DOMDocument();
-        libxml_use_internal_errors(true); // Suppress HTML parsing warnings
+        libxml_use_internal_errors(true);
         @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
         libxml_clear_errors();
         
@@ -92,7 +92,7 @@ class SmartrzScraper {
             'completed' => []
         ];
         
-        // Find all stream cards - multiple possible class names
+        // Find all stream cards
         $queries = [
             '//div[contains(@class, "stream-card")]',
             '//div[contains(@class, "card")]',
@@ -106,7 +106,7 @@ class SmartrzScraper {
         }
         
         if (!$streamCards || $streamCards->length === 0) {
-            return $streams; // Return empty if no cards found
+            return $streams;
         }
         
         foreach ($streamCards as $card) {
@@ -160,7 +160,6 @@ class SmartrzScraper {
         $imgNodes = $xpath->query('.//img', $cardNode);
         if ($imgNodes->length > 0) {
             $thumbnail = $imgNodes->item(0)->getAttribute('src');
-            // Ensure absolute URL
             if ($thumbnail && strpos($thumbnail, 'http') !== 0) {
                 $thumbnail = 'https://rolexcoderz.live' . $thumbnail;
             }
@@ -179,7 +178,6 @@ class SmartrzScraper {
             $nodes = $xpath->query($query, $cardNode);
             if ($nodes->length > 0) {
                 $url = $nodes->item(0)->getAttribute('href');
-                // Ensure absolute URL
                 if ($url && strpos($url, 'http') !== 0) {
                     $url = 'https://rolexcoderz.live' . $url;
                 }
@@ -188,7 +186,7 @@ class SmartrzScraper {
         }
         
         // Determine status
-        $status = 'completed'; // default
+        $status = 'completed';
         $badgeQueries = [
             './/div[contains(@class, "stream-badge")]',
             './/div[contains(@class, "badge")]',
