@@ -1,0 +1,14 @@
+{
+    "name": "smartrz/live-platform",
+    "description": "Smartrz Live Streaming Platform",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "ext-curl": "*",
+        "ext-dom": "*",
+        "ext-libxml": "*"
+    },
+    "config": {
+        "platform-check": false
+    }
+}
